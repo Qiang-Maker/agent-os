@@ -4,17 +4,70 @@
 
 一个话题 = 一个任务；一个话题 = 一个会话；bot 之间可以互相 @ 派活；定时任务让系统在你没说话时继续运转；高危操作停下来等你拍板。
 
-> 部署与飞书配置看这里：**[docs/DEPLOY.md（大白话版）](docs/DEPLOY.md)**
-> 给 AI 看的项目说明书：**[CLAUDE.md](CLAUDE.md)**
+> 部署与飞书配置看这里：**[docs/DEPLOY.md（大白话版）](docs/DEPLOY.md)**　·　给 AI 看的项目说明书：**[CLAUDE.md](CLAUDE.md)**
 
 ---
 
 ## 这是什么
 
-- **入口**：飞书话题群（移动端/桌面端随时派活、看进度、做审批）。
+- **入口**：飞书话题群（移动端 / 桌面端随时派活、看进度、做审批）。
 - **执行引擎**：本机的 Claude Code（`claude -p --output-format stream-json`）与 Codex（`codex exec --json`），做成可插拔适配器。
 - **指挥层（本项目）**：消息解析、会话内核、流式卡片、多 bot 协作、MCP 工具、定时调度、审批门。
-- **不调模型 API**：模型调用、工具执行、上下文管理都由两个 CLI 自己负责——我们造的是上面的指挥层。
+- **不调模型 API**：模型调用、工具执行、上下文管理都由两个 CLI 自己负责——本项目造的是上面的指挥层。
+
+## 这套系统是怎么搭起来的
+
+一条任务从飞书到落地的完整链路：
+
+```text
+飞书话题群
+   │  @机器人 发消息（长连接订阅 im.message.receive_v1）
+   ▼
+飞书接入层 ── 解析 @提及、图片/文件、话题 thread_id
+   ▼
+会话内核 ──── 一个话题 = 一个会话（bot 维度隔离、状态机、JSON 原子落盘、重启恢复）
+   ▼
+CLI 引擎 ──── CliAdapter 统一抽象：Claude Code / Codex 同构接入
+   │           首轮启动，多轮 --resume 续接——同一话题始终延续同一 CLI 会话
+   ▼
+过程呈现 ──── 流式任务卡片：执行中 → 已完成（节流更新），带停止按钮
+   ▼
+能力扩展 ──── 本地 MCP Server 向 CLI 暴露 5 个应用工具：
+              request_clarification / request_spec_approval /
+              dispatch_task / schedule_manage / request_approval
+   ▼
+团队协作 ──── 多 bot 名册 + 交接单派活 + 结果回到编排者（轮次熔断防失控）
+定时调度 ──── once / interval / cron 三种规则，文件热更新 + 执行幂等 + 连续失败熔断
+安全闸门 ──── 审批门：调用即停机，飞书审批卡上拍板后才继续
+```
+
+设计上有三个关键取舍：
+
+1. **不重造模型层**：推理、工具执行、上下文压缩全部交给成熟的编程 CLI，本项目的每一行代码都在解决「人怎么指挥它们」。
+2. **一个话题一个会话**：飞书的话题（thread）天然就是任务边界——讨论在哪，会话就在哪，@ 一下就能接着聊。
+3. **能力用 MCP 注入**：澄清、产品文档、派活、定时、审批五个应用工具通过本地 MCP Server 挂到任意 CLI 上，不侵入 CLI 本身。
+
+## 代码是怎么组织的
+
+分层：`im`（接入）→ `core`（领域内核）→ `cli`（引擎）→ `mcp`（工具）→ `app`（运行主线）→ `index.ts`（组装启动）。每个 bot = 一个飞书应用 + 一份配置（引擎、角色、工作目录、技能）；团队名册、会话、任务、定时计划、审批状态全部落盘为 JSON，进程重启不丢。
+
+```text
+src/
+├── index.ts            # 入口：加载配置、连 bot、组装运行主线
+├── deploy-cli.ts       # 部署 CLI（doctor/start/stop/restart/status/logs）
+├── im/                 # 飞书接入层（lark / message-parser / card）
+├── core/               # 领域内核（会话、协作、澄清、产品文档、审批、调度、团队）
+├── cli/                # CLI 引擎（adapters / runner / 原生会话 / 原生压缩 / MCP 参数）
+├── mcp/                # 本地 MCP Server（5 个应用工具）
+├── app/                # 运行主线（runtime / 命令 / 卡片动作 / 各类 runner）
+└── probe-*.ts          # 独立探针（事件流解析、MCP 工具验证）
+config/
+├── bots.example.json   # 团队名单模板（复制为 bots.json）
+demo-server/            # 示例业务服务（日志巡检演示）
+example-project/        # 最小示例项目（协作演示用）
+workspace-template/     # 业务工作区模板（skills / subagents / issue-tracker）
+deploy/                 # pm2 / systemd / Docker 部署配置范例
+```
 
 ## 能力清单
 
@@ -36,6 +89,8 @@
 
 ## 快速开始（本地）
 
+前置：Node 22+、pnpm；本机装好并登录 **Claude Code 或 Codex** 中至少一个（`claude --version` / `codex --version` 能出东西即可）。
+
 ```bash
 pnpm install
 pnpm build
@@ -50,26 +105,6 @@ pnpm agent-os start                       # pm2 常驻
 ```
 
 在飞书话题群里 @ 任意 bot 说句话即可。首次没配好飞书应用时，参考 [docs/DEPLOY.md](docs/DEPLOY.md)，15 分钟能配完一台。
-
-## 目录结构
-
-```text
-src/
-├── index.ts            # 入口：加载配置、连 bot、组装运行主线
-├── deploy-cli.ts       # 部署 CLI（doctor/start/stop/restart/status/logs）
-├── im/                 # 飞书接入层（lark / message-parser / card）
-├── core/               # 领域内核（会话、协作、澄清、产品文档、审批、调度、团队）
-├── cli/                # CLI 引擎（adapters / runner / 原生会话 / 原生压缩 / MCP 参数）
-├── mcp/                # 本地 MCP Server（5 个应用工具）
-├── app/                # 运行主线（runtime / 命令 / 卡片动作 / 各类 runner）
-└── probe-*.ts          # 独立探针（事件流解析、MCP 工具验证）
-config/
-├── bots.example.json   # 团队名单模板（复制为 bots.json）
-demo-server/            # 示例业务服务（日志巡检演示）
-example-project/        # 最小示例项目（协作演示用）
-workspace-template/     # 业务工作区模板（skills / subagents / issue-tracker）
-deploy/                 # pm2 / systemd / Docker 部署配置范例
-```
 
 ## 常用命令
 
@@ -115,14 +150,9 @@ pnpm demo:traffic [scenario] # 给示例服务造流量（normal/slow/error-spik
 | `SCHEDULE_API_PORT` / `SCHEDULE_API_TOKEN` | 定时任务管理接口（本机回环） |
 | `PATROL_WEBHOOK_URL` | 运维群自定义机器人 webhook（日志巡检推送用） |
 
-## 已知限制与注意事项
+## 部署
 
-- 群聊里机器人**只响应 @它 的消息**（受飞书「获取群组中用户@机器人消息」权限约束）；私聊不受此限。
-- 卡片上的**按钮**（停止任务 / 审批 / 澄清表单）依赖订阅 `card.action.trigger` 回调——飞书应用后台要把它一起配上（见 docs/DEPLOY.md）。
-- 服务要**常驻**才有"随时在线"的效果：本地 `pnpm start` 关掉终端就停；生产用 `deploy/` 里的 pm2 / systemd / Docker。
-- Windows 注意事项：`tsx watch` 不会因 `.env` 变更自动重启（改完 .env 手动重启一次）；长时间运行建议放独立终端或 pm2 等进程管理工具。
-- 引擎可用性：`claude` / `codex` 至少装一个并完成登录；`pnpm agent-os doctor` 会检查。模型能力差异由各自 CLI 决定，本项目不做模型层适配。
-- 定时任务 / 审批 / 澄清等能力依赖本机回环接口（`SCHEDULE_API_PORT`），请勿把该端口暴露到公网。
+生产环境用 `deploy/` 里的 pm2 / systemd / Docker 配置常驻；从零到上线的完整步骤（含飞书应用创建、权限、长连接、发布）见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ## License
 

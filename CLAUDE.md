@@ -9,7 +9,10 @@ pnpm dev（tsx watch）/ pnpm start / pnpm build
 
 ## 约定
 
-- ESM only，Node 22+，pnpm
+- ESM only，Node 22+，pnpm；相对导入带 `.js` 后缀
+- TypeScript 7 需在 tsconfig 显式声明 `"types": ["node"]`
+- Windows 下 CLI 的 prompt 走 stdin（见 `src/cli/types.ts` 的 `promptInputForPlatform`），避免 cmd 转义问题
+- 子项目需要独立安装依赖时，给它自己的 `pnpm-workspace.yaml`（参考 example-project）
 - 凭证只放 .env（已 gitignore），绝不硬编码、绝不提交
 
 ## 模块地图
@@ -52,14 +55,3 @@ pnpm dev（tsx watch）/ pnpm start / pnpm build
 - src/app/scheduled-task-runner.ts — 到点静默唤醒目标 bot 会话（threadId=scheduled-<taskId>）
 - src/app/approval-runner.ts — 审批结果恢复开发者会话
 - src/app/ — 运行主线（runtime/cli-execution/session-view/command-handler/card-action-handler/notification/collaboration-service/product-*）
-
-## 错题本
-
-> 踩坑后追加一行：现象 → 原因 → 正确做法。给未来的 AI 和人看。
->
-> - TypeScript 7 报 `Cannot find name 'node:child_process'` → TS7 不再自动包含 @types/node → tsconfig 里加 `"types": ["node"]`。
-> - 运行 `node dist/index.js` 报模块找不到 → ESM 下相对导入必须带 `.js` 后缀（本项目已经全部带后缀）。
-> - 飞书评论取根回复报类型错 → SDK 返回字段是 `reply_list.replies`，不是 `replies`。
-> - 早期一次整文件替换把「Windows prompt 走 stdin」机制漏掉了 → 最终形态：`CliPromptInput` 保留，Windows 下 prompt 走 stdin，避免 cmd 转义中文。
-> - 同一个父目录下若没有 `pnpm-workspace.yaml` 的显式 packages 列表，子项目会被父 workspace 吞掉 → 子项目想要独立安装依赖时，给它自己的 `pnpm-workspace.yaml`（example-project 就是这么处理的）。
-> - 长会话里模型可能只回复 deliveryMode/specPath 而不调工具 → `ensureProductSpecSubmission` 用同一 CLI 会话纠正一次，仍不提交就报错，不允许"口头完成"。
