@@ -1,0 +1,35 @@
+{
+  "name": "agent-os",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "把飞书变成 AI 编程 CLI（Claude Code / Codex）的指挥台：一个人，一队 Agent",
+  "scripts": {
+    "dev": "pnpm start",
+    "start": "tsx watch --include .env --include \"config/*.json\" src/index.ts",
+    "start:once": "tsx src/index.ts",
+    "start:prod": "node dist/index.js",
+    "agent-os": "tsx src/deploy-cli.ts",
+    "probe:cli": "tsx src/probe-cli.ts",
+    "probe:tool": "tsx src/probe-app-tool.ts",
+    "demo:server": "pnpm --filter agent-os-demo-server start",
+    "demo:traffic": "pnpm --filter agent-os-demo-server traffic",
+    "build": "tsc"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.74.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "cac": "^7.0.0",
+    "croner": "^10.0.1",
+    "dotenv": "^18.0.5",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

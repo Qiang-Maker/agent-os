@@ -1,0 +1,25 @@
+# systemd 服务：不用 pm2 时的替代方案
+# 1. 改 WorkingDirectory / ExecStart 里的路径为你的实际部署路径
+# 2. sudo cp deploy/agent-os.service /etc/systemd/system/agent-os.service
+# 3. sudo systemctl daemon-reload && sudo systemctl enable --now agent-os
+# 4. 查看日志：journalctl -u agent-os -f
+
+[Unit]
+Description=Agent OS - 一个人，一队 Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/agent-os
+ExecStart=/usr/bin/env node dist/index.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+# Claude Code / Codex 的用户级配置和登录态默认在 ~/.claude ~/.codex。
+# 如果服务以 root 或别的用户跑，需要指向你完成登录的那个用户目录：
+# Environment=HOME=/home/ubuntu
+
+[Install]
+WantedBy=multi-user.target
