@@ -1,0 +1,53 @@
+import { resolve } from 'node:path';
+import { getCliAdapter } from './cli/registry.js';
+import { runCli } from './cli/runner.js';
+import type { CliId } from './cli/types.js';
+import { findClarificationRequest } from './core/clarification.js';
+
+const cliId = process.argv[2] as CliId | undefined;
+const workspace = process.argv[3] ?? process.cwd();
+if (cliId !== 'claude' && cliId !== 'codex') {
+  console.error('用法：pnpm probe:tool <claude|codex>');
+  process.exit(1);
+}
+
+const adapter = getCliAdapter(cliId);
+const result = await runCli({
+  adapter,
+  cwd: resolve(workspace),
+  // 真实消息流在 index.ts 注入这两个变量；探针独立运行时补一份占位上下文，
+  // 否则 MCP 子进程拿不到会话上下文，request_clarification 会直接返回错误。
+  env: {
+    AGENT_OS_CHAT_ID: 'oc_probe',
+    AGENT_OS_OWNER_OPEN_ID: 'ou_probe',
+  },
+  prompt: [
+    '我们准备给任务列表增加优先级功能。',
+    '请调用 request_clarification，询问一个会实质影响实现范围的问题。',
+    '提供 2 到 4 个清晰选项，并标记推荐项。',
+    '调用工具后，用一句话结束。',
+  ].join('\n'),
+  onEvent(event) {
+    if (event.type !== 'tool_call') return;
+    console.log(`\n[应用工具] ${event.toolName}`);
+    console.log(JSON.stringify(event.input, null, 2));
+  },
+});
+
+const unexpectedTool = result.toolCalls?.find(
+  (call) => call.toolName !== 'request_clarification',
+);
+if (unexpectedTool) {
+  throw new Error(`应用层收到未统一的工具名：${unexpectedTool.toolName}`);
+}
+
+const clarification = findClarificationRequest(result.toolCalls);
+if (!clarification) {
+  throw new Error(
+    `${adapter.displayName} 没有返回通过 Zod Schema 校验的 request_clarification`,
+  );
+}
+
+console.log(
+  `\n[完成] ${adapter.displayName} 返回 ${clarification.questions.length} 个合法问题`,
+);

@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  agent-os:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: agent-os
+    restart: unless-stopped
+    volumes:
+      - ../.env:/app/.env
+      - ../config:/app/config
+      - ../data:/app/data
+      - ../logs:/app/logs
+      # Claude Code / Codex 的登录态；在宿主机完成登录后挂进来
+      - ${HOME}/.claude:/root/.claude
+      - ${HOME}/.codex:/root/.codex
+    environment:
+      - NODE_ENV=production
+    # 定时任务管理接口只在本机回环使用，默认不需要对外暴露
+    # ports:
+    #   - "127.0.0.1:3101:3101"

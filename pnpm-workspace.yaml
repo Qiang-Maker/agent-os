@@ -1,0 +1,8 @@
+packages:
+  - "."
+  - "demo-server"
+
+# pnpm 10+ 的构建脚本审批：只有显式批准的依赖才会执行 postinstall
+allowBuilds:
+  esbuild: true
+  protobufjs: true
